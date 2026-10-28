@@ -265,8 +265,11 @@ async function githubRequest(method,url,payload){
   let body={};try{body=await response.json()}catch(_){/* GitHub pode retornar corpo vazio. */}
   if(!response.ok){
     if(response.status===404)return {__notFound:true};
-    const base=response.status===401?'Token inválido ou expirado.':response.status===403?'Acesso negado. Verifique as permissões Contents: Read and write e o repositório selecionado.':response.status===409?'Conflito de versão no repositório. Recarregue e tente salvar novamente.':`Erro ${response.status} do GitHub.`;
-    throw Error(base+(body.message?' '+String(body.message).slice(0,160):''));
+    const remaining=response.headers.get('x-ratelimit-remaining');
+    const base=response.status===401?'Token inválido, expirado ou revogado.':response.status===403?(remaining==='0'?'Limite de requisições da API do GitHub atingido.':'O GitHub negou acesso a esta operação (HTTP 403).'):response.status===409?'Conflito de versão no repositório. Recarregue e tente salvar novamente.':`Erro ${response.status} do GitHub.`;
+    // A rota pública ajuda no diagnóstico; jamais apresentar o token ou os headers de autenticação.
+    const target=new URL(url).pathname;
+    throw Error(`${base} ${body.message?String(body.message).slice(0,160):''} [${method} ${target}]`.trim());
   }
   return body;
 }
@@ -303,13 +306,21 @@ async function adminConnect(){
   adminToken=token;
   if(tokenInput)tokenInput.value='';
   adminBusySet(true);adminStatus('Verificando conta, repositório e branch…');
+  let etapa='validar token e identificar conta';
   try{
+    adminStatus('Etapa 1/4: autenticando sua conta no GitHub…');
     const me=await githubRequest('GET','https://api.github.com/user');
     if(me.__notFound||!me.login)throw Error('Não foi possível identificar a conta.');
+    etapa='acessar o repositório '+adminState.owner+'/'+adminState.repo;
+    adminStatus('Etapa 2/4: verificando acesso ao repositório…');
     const repoData=await githubRequest('GET',adminAPIPath('').replace(/\/$/,''));
     if(repoData.__notFound)throw Error('Repositório não encontrado ou não autorizado para este token.');
+    etapa='consultar a branch '+adminState.branch;
+    adminStatus('Etapa 3/4: conferindo a branch selecionada…');
     const branchData=await githubRequest('GET',adminAPIPath('branches/'+adminState.branch));
     if(branchData.__notFound)throw Error('Essa branch não existe no repositório. Confira Settings > Pages.');
+    etapa='ler o arquivo index.html na branch '+adminState.branch;
+    adminStatus('Etapa 4/4: verificando a leitura do index.html…');
     const home=await githubContent('index.html');
     if(home.__notFound)throw Error('Arquivo index.html não encontrado na raiz da branch. Ajuste a branch ou publique o site na raiz.');
     adminState.connectedAs=me.login;
@@ -318,7 +329,7 @@ async function adminConnect(){
     adminState.uploadedPath='';
     render();
   }catch(err){
-    adminToken='';adminState.connectedAs='';adminStatus(err.message||'Não foi possível conectar.',true);
+    adminToken='';adminState.connectedAs='';adminStatus('Erro ao '+etapa+': '+(err.message||'Não foi possível conectar.')+' Verifique esse acesso nas configurações do token. Não envie o token a terceiros.',true);
   }finally{adminBusySet(false);}
 }
 function adminLogout(){
