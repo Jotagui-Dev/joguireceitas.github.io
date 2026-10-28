@@ -1,0 +1,11 @@
+{
+  "schema": "jogui-fotos-1",
+  "photos": {
+    "panqueca-banana-aveia": {
+      "url": "imagens/receitas/panqueca-banana-aveia-mvrh9gtq-br1qoy.jpg",
+      "type": "admin",
+      "mode": "prato",
+      "credit": "Acervo Receitas do Jogui"
+    }
+  }
+}
